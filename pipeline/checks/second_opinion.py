@@ -40,5 +40,50 @@ from ..model_cache import get_preds  # noqa: F401
 
 
 def run(ds, cfg, preds=None):
-    # TODO
-    raise NotImplementedError("check second_opinion chưa làm")
+    if preds is None:
+        preds = get_preds(ds, cfg, "checker")
+    limits = cfg["second_opinion"]
+    issues = []
+    for path in ds.image_files():
+        stem = path.stem
+        lines = ds.read_label_lines(stem)
+        if stem not in preds or lines is None:
+            continue
+        # Giữ số dòng gốc; parse một lần cho cả ghép box và FALSE_POS.
+        labels = []
+        for no, text in lines:
+            try:
+                box = parse_yolo_line(text)
+            except (ValueError, OverflowError):
+                continue
+            if 0 <= box[0] < len(ds.classes):
+                labels.append((no, box))
+        size = ds.image_size(stem)
+        for cls, conf, x, y, w, h in preds[stem]:
+            if conf < limits["conf"] or size is None or w * size[0] * h * size[1] < limits["min_area_px"]:
+                continue
+            candidates = [(box[0], iou_xywh((x, y, w, h), box[1:])) for _, box in labels]
+            candidates = [(c, overlap) for c, overlap in candidates if overlap >= limits["iou_missing"]]
+            extra = {"conf": conf}
+            if not candidates:
+                code, message = "POSSIBLE_MISSING", "Model thấy vật chưa có box nhãn"
+            else:
+                same = [overlap for c, overlap in candidates if c == cls]
+                best = max(same) if same else max(overlap for _, overlap in candidates)
+                extra["iou"] = best
+                if same:
+                    if best >= limits["iou_loose"]:
+                        continue
+                    code, message = "POSSIBLE_LOOSE_BOX", "Box cùng lớp có thể lỏng/lệch"
+                elif best >= limits["iou_match"]:
+                    code, message = "POSSIBLE_WRONG_CLASS", "Model và nhãn không đồng ý lớp"
+                else:
+                    continue
+            issues.append(Issue("second_opinion", WARN, code, stem, message, extra=extra))
+        support = [r for r in preds[stem] if r[1] >= limits["fp_conf"]]
+        for no, box in labels:
+            best = max((iou_xywh(box[1:], r[2:]) for r in support), default=0.0)
+            if not support or best < limits["iou_missing"]:
+                issues.append(Issue("second_opinion", WARN, "POSSIBLE_FALSE_POS", stem,
+                                    "Box nhãn không khớp dự đoán nào", no, {"iou": best}))
+    return issues
