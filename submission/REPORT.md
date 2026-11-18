@@ -41,8 +41,20 @@ Chạy `python -m pipeline.run --budget 0 --work work/run_nb --reports work/rep_
 Hai điểm mù có bằng chứng trên calib: **gần trùng biến đổi mạnh** bỏ sót calib_037 và calib_038 (**2/6**); **box lỏng** bỏ sót calib_002, 006, 012, 024 (**4/5**). Đối chiếu [MANIFEST](../data/calib/MANIFEST.csv) với checker ở cấu hình chọn; không suy diễn các tỉ lệ này thành recall trên raw.
 
 ## 5. Train: raw vs clean
-**Chưa chạy.** Train Colab là phần tùy chọn, chấm riêng; phiên này hoàn thiện phần lõi, chưa thực hiện thí nghiệm GPU. Không có số liệu mAP hoặc bằng chứng clean tốt hơn raw.
+Đã train trên Colab: **yolo26n.pt, 20 epoch, seed 0 và 1**, batch=16, imgsz=640 cho cả hai biến thể. Cùng gold_val/test theo script của đề. Hash cấu hình của cả 4 JSON và manifest của clean khớp bản nộp sau chuẩn hoá LF; clean có 205 ảnh. Số 224 của raw là số file dựng trước khi Ultralytics tự bỏ ảnh/nhãn hỏng, không xác nhận số ảnh thực sự được dùng vì ZIP không có log train.
 
+| biến thể | #ảnh train | số seed | map50 (TB ± độ lệch) | map50_95 (TB ± độ lệch) | precision (TB ± độ lệch) | recall (TB ± độ lệch) |
+|---|---|---|---|---|---|---|
+| raw | 224 | 2 | 0.726 ± 0.000 | 0.512 ± 0.004 | 0.764 ± 0.061 | 0.649 ± 0.028 |
+| clean | 205 | 2 | 0.700 ± 0.030 | 0.486 ± 0.013 | 0.715 ± 0.073 | 0.615 ± 0.017 |
+
+Chênh mAP50 (clean − raw) = **-0.025**.
+
+Đọc số chưa làm tròn từ JSON: raw mAP50=0,72575, clean=0,70035; **clean−raw=−0,02540** (−2,54 điểm phần trăm). Độ lệch chuẩn mẫu tương ứng ≈0,00021 và 0,03048; chênh theo seed là −0,0468 và −0,0040. Chênh trung bình nhỏ hơn độ lệch của clean; chỉ 2 seed nên chưa kết luận khác biệt ổn định hay có ý nghĩa thống kê, và không thể tuyên bố clean tốt hơn raw. mAP50-95 cũng giảm khoảng 0,02545. Con số ±0,000 trong bảng raw là làm tròn, không phải độ lệch bằng 0.
+
+Hai giả thuyết cần kiểm: (1) raw chứa 4 ảnh bị báo LEAK_TEST, có thể làm đánh giá raw lạc quan; cần thí nghiệm loại ảnh rò rỉ khỏi train và đánh giá trên tập giữ kín độc lập, không dùng test hiện tại chọn ngưỡng. (2) clean có ít ảnh hơn và còn 38/205 ảnh cảnh báo chưa duyệt; mất mẫu hữu ích hoặc nhãn còn sai có thể ảnh hưởng, nhất là truck (AP50 trung bình raw≈0,6485, clean≈0,5588). Cần duyệt bổ sung được phê duyệt, so sánh tập train có cùng ảnh và tăng số seed với cùng cấu hình để tách ảnh hưởng nhãn khỏi số lượng ảnh.
+
+Nguồn: [4 JSON và bảng tổng hợp](results/comparison.md). Đây là thí nghiệm trên bản nháp Hold, chưa chứng minh chất lượng đủ phát hành.
 ## 6. Quyết định và ghi chú AI
 Giữ **Hold**, chỉ dùng bản nháp thử nghiệm. Release cần 0 lỗi bắt buộc và dưới 10% ảnh cảnh báo chưa duyệt: với 205 ảnh, tối đa 20. Hiện còn 38; cần xử lý ít nhất 18 ảnh nữa nếu mẫu số giữ nguyên, nhưng ngân sách lab 80 đã hết. Đề xuất vòng duyệt bổ sung được phê duyệt trong thực tế; không sửa ngân sách/gate hay làm checker mất recall để ép Release.
 
